@@ -1,0 +1,23 @@
+# This workspace also contains design notes, VM captures, build output, and
+# retained legacy code. Keep only the extension project and its public docs and
+# tests in this repository.
+/*
+!/.gitignore
+!/.editorconfig
+!/LICENSE
+!/LICENSES/
+!/Makefile
+!/README.md
+!/eslint.config.js
+!/extension.js
+!/icons/
+!/install.sh
+!/metadata.json
+!/netbird/
+!/package-lock.json
+!/package.json
+!/prefs.js
+!/prefs/
+!/shell/
+!/tests/
+/SUBMISSION-TODO.md

@@ -1,0 +1,7 @@
+{
+  "name": "NetBird for GNOME",
+  "description": "Control the local NetBird daemon from GNOME Quick Settings and a native GTK interface. Requires NetBird 0.76.0 or later with its HTTP/JSON Unix socket enabled.",
+  "uuid": "gnome@netbird.io",
+  "shell-version": ["46", "47", "48", "49", "50"],
+  "url": "https://github.com/PizzaLovingNerd/netbird-gnome-extension"
+}

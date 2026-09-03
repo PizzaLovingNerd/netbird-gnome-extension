@@ -1,0 +1,14 @@
+{
+  "name": "netbird-gnome-extension",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "npm run lint && npm test",
+    "lint": "eslint extension.js prefs.js netbird prefs shell tests",
+    "test": "gjs -m tests/api.test.js && gjs -m tests/settings-controller.test.js && gjs -m tests/status-controller.test.js && gjs -m tests/status-icons.test.js && gjs -m tests/window-activation.test.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.9.1"
+  }
+}

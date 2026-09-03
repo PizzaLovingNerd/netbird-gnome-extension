@@ -1,0 +1,19 @@
+[Icon Theme]
+Name=Hicolor
+Comment=Fallback icon theme
+Hidden=true
+Directories=scalable/apps,scalable/status
+
+[scalable/apps]
+Size=32
+MinSize=16
+MaxSize=512
+Type=Scalable
+Context=Applications
+
+[scalable/status]
+Size=16
+MinSize=8
+MaxSize=512
+Type=Scalable
+Context=Status
