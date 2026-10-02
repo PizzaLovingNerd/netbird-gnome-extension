@@ -9,9 +9,15 @@ const RECONNECT_DELAYS_SECONDS = [1, 2, 5, 10, 30];
 const LOGIN_STATES = ['NeedsLogin', 'LoginFailed', 'SessionExpired'];
 
 export class MainController {
-    constructor({onError, onStateChanged}) {
+    constructor({
+        client = new NetBirdClient(),
+        launchUri = uri => Gio.AppInfo.launch_default_for_uri(uri, null),
+        onError,
+        onStateChanged,
+    }) {
         this._busy = false;
-        this._client = new NetBirdClient();
+        this._client = client;
+        this._launchUri = launchUri;
         this._features = {};
         this._networks = [];
         this._onError = onError;
@@ -162,14 +168,17 @@ export class MainController {
 
     async _login() {
         const login = await this._client.login();
+        if (this._client.cancelled)
+            return;
         if (login.needsSsoLogin) {
             const uri = login.verificationUriComplete || login.verificationUri;
             if (!/^https:\/\//.test(uri))
                 throw new Error('NetBird returned an invalid sign-in address');
-            Gio.AppInfo.launch_default_for_uri(uri, null);
+            this._launchUri(uri);
             await this._client.waitForSso(login.userCode);
         }
-        await this._client.connect(this._activeProfileId());
+        if (!this._client.cancelled)
+            await this._client.connect(this._activeProfileId());
     }
 
     _subscribe() {

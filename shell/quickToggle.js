@@ -2,11 +2,13 @@
 
 import GObject from 'gi://GObject';
 
+import {InjectionManager} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {QuickMenuToggle} from 'resource:///org/gnome/shell/ui/quickSettings.js';
 
 import {StatusController} from './statusController.js';
+import {VpnButtonGuard} from './vpnButtonGuard.js';
 
 export const NetBirdToggle = GObject.registerClass({
     GTypeName: 'NetBirdExtensionToggle',
@@ -19,13 +21,16 @@ export const NetBirdToggle = GObject.registerClass({
             toggleMode: false,
         });
 
-        this._busy = false;
         this._extension = extension;
         this._panelIcon = panelIcon;
         this._statusIcons = statusIcons;
         this._profileSection = new PopupMenu.PopupMenuSection();
         this._profileSeparator = new PopupMenu.PopupSeparatorMenuItem();
         this._signalIds = [];
+        this._profileKey = null;
+        this._vpnGuard = new VpnButtonGuard(
+            Main.panel.statusArea.quickSettings, new InjectionManager(),
+            error => this._notifyError('VPN Could Not Be Disabled', error));
 
         this.menu.addMenuItem(this._profileSection);
         this.menu.addMenuItem(this._profileSeparator);
@@ -42,6 +47,7 @@ export const NetBirdToggle = GObject.registerClass({
         this.menu.setHeader(statusIcons.forState('Unavailable'), 'NetBird');
 
         this._controller = new StatusController({
+            beforeConnect: () => this._vpnGuard.disconnectActiveVpns(),
             onActionError: (title, error) => this._notifyError(title, error),
             onStateChanged: state => this._sync(state),
         });
@@ -63,6 +69,8 @@ export const NetBirdToggle = GObject.registerClass({
         this._controller.destroy();
         this._controller = null;
         this._statusIcons = null;
+        this._vpnGuard.destroy();
+        this._vpnGuard = null;
         for (const [object, id] of this._signalIds)
             object.disconnect(id);
         this._signalIds = [];
@@ -70,25 +78,20 @@ export const NetBirdToggle = GObject.registerClass({
     }
 
     async _toggleConnection() {
-        if (this._busy)
-            return;
-
-        this._busy = true;
-        this.reactive = false;
         const controller = this._controller;
         const handledInShell = await controller.toggleConnection();
         if (this._controller !== controller)
             return;
 
-        this.reactive = true;
-        this._busy = false;
         if (!handledInShell) {
             this.menu.close();
             this._extension.openPreferences();
         }
     }
 
-    _sync({profileName, profiles, snapshot}) {
+    _sync({busy = false, profileName, profiles, snapshot}) {
+        this.reactive = !busy;
+        this._vpnGuard.setBlocked(snapshot.connected);
         const gicon = this._statusIcons.forState(snapshot.state);
         this.gicon = gicon;
         this._panelIcon.gicon = gicon;
@@ -98,9 +101,16 @@ export const NetBirdToggle = GObject.registerClass({
         this.subtitle = statusLabel(snapshot.state, snapshot.localPeer.ipv4);
         this._panelIcon.visible = true;
         this._rebuildProfiles(profiles, profileName);
+        this._profileSection.setSensitive(!busy && snapshot.state !== 'Unavailable');
+        this._refreshItem.setSensitive(!busy);
     }
 
     _rebuildProfiles(profiles, profileName) {
+        const key = JSON.stringify([profileName, profiles.map(profile =>
+            [profile.id, profile.name, profile.isActive])]);
+        if (key === this._profileKey)
+            return;
+        this._profileKey = key;
         this._profileSection.removeAll();
         this._profileSection.actor.visible = profiles.length > 0;
         this._profileSeparator.visible = profiles.length > 0;

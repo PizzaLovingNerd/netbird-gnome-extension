@@ -72,7 +72,7 @@ export function createResourcesPage(actions) {
 function createResourceRow(onResourceToggled) {
     const entry = {
         network: {},
-        row: new Adw.SwitchRow(),
+        row: new Adw.SwitchRow({use_markup: false}),
         suppress: false,
     };
     entry.row.add_prefix(new Gtk.Image({

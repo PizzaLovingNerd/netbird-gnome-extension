@@ -145,7 +145,8 @@ export class SettingsController {
 
     async setValue(key, value) {
         const field = FIELDS[key];
-        if (!field || this._client.cancelled || this._managedKeys.has(key))
+        if (!field || this._client.cancelled || this._managedKeys.has(key) ||
+            !this._values.has(key))
             return;
 
         const previous = this._values.get(key);
@@ -159,47 +160,87 @@ export class SettingsController {
             return;
         }
 
+        const profileId = this._profileId;
         this._setBusy(true);
         let writeSucceeded = false;
         try {
             const apiValue = field.inverted ? !value : value;
             await this._client.updateConfig({
                 [field.api]: apiValue,
-                profileName: this._profileId,
+                profileName: profileId,
             });
             writeSucceeded = true;
 
             if (RECONNECT_FIELDS.has(key)) {
                 const status = await this._client.status();
                 if (status.snapshot.connected) {
-                    await this._client.disconnect();
-                    await this._client.connect(this._profileId);
+                    const {profiles} = await this._client.profiles();
+                    const activeProfile = profiles.find(profile => profile.isActive);
+                    if (activeProfile?.id === profileId) {
+                        await this._client.disconnect();
+                        await this._client.connect(profileId);
+                    }
                 }
             }
 
-            const result = await this._client.config(this._profileId);
+            const result = await this._client.config(profileId);
             const applied = readValues(result.config).get(key);
             if (!settingWasApplied(key, value, applied)) {
                 throw new Error(
                     `NetBird accepted the ${field.api} change but did not apply it.`);
             }
-            this._values.set(key, value);
+            this._values.set(key, applied);
+            if (key === 'preSharedKey' && !this._client.cancelled)
+                this._onValueRestored(key, applied);
         } catch (error) {
-            if (!this._client.cancelled) {
-                if (writeSucceeded) {
-                    const apiPrevious = field.inverted ? !previous : previous;
-                    try {
-                        await this._client.updateConfig({
-                            [field.api]: apiPrevious,
-                            profileName: this._profileId,
-                        });
-                    } catch {
-                        // Keep the original error and restore the visible value.
-                    }
-                }
+            if (this._client.cancelled)
+                return;
+
+            if (!writeSucceeded) {
                 this._onValueRestored(key, previous);
                 this._onError('Setting Could Not Be Saved', error);
+                return;
             }
+
+            let rollbackError = null;
+            if (key === 'preSharedKey' && previous === MASKED_PRESHARED_KEY) {
+                rollbackError = new Error('The previous key is hidden and cannot be restored automatically.');
+            } else {
+                const apiPrevious = field.inverted ? !previous : previous;
+                try {
+                    await this._client.updateConfig({
+                        [field.api]: apiPrevious, profileName: profileId,
+                    });
+                } catch (restoreError) {
+                    rollbackError = restoreError;
+                }
+            }
+            if (this._client.cancelled)
+                return;
+
+            try {
+                const result = await this._client.config(profileId);
+                if (this._client.cancelled)
+                    return;
+                const current = readValues(result.config).get(key);
+                this._values.set(key, current);
+                this._onValueRestored(key, current);
+                if (!Object.is(current, previous) && !rollbackError)
+                    rollbackError = new Error('The daemon did not restore the previous value.');
+            } catch (readError) {
+                if (this._client.cancelled)
+                    return;
+                this._values.delete(key);
+                rollbackError = new Error('The current value could not be verified. Reopen Settings before retrying.', {
+                    cause: readError,
+                });
+            }
+            const message = rollbackError
+                ? new Error(`${error.message} ${rollbackError.message} The change may still be applied.`, {
+                    cause: error,
+                })
+                : error;
+            this._onError('Setting Change Could Not Be Completed', message);
         } finally {
             this._setBusy(false);
         }

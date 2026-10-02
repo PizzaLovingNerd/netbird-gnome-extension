@@ -262,7 +262,11 @@ export function subscribeNetBirdStatus({
     }, {
         cancellable,
         onError,
-        onMessage: data => onStatus(normalizeStatus(data)),
+        onMessage: data => {
+            if (!isNetBirdVersionSupported(data.daemonVersion))
+                throw new NetBirdVersionError(data.daemonVersion);
+            onStatus(normalizeStatus(data));
+        },
     });
 }
 

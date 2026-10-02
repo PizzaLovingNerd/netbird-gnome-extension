@@ -146,6 +146,7 @@ function createPeerRow() {
     const row = new Adw.ActionRow({
         subtitle_lines: 1,
         title_lines: 1,
+        use_markup: false,
     });
     const icon = new Gtk.Image();
     const latency = new Gtk.Label({

@@ -32,12 +32,16 @@ export async function callDaemon(method, body = {}, {
             requestCancellable.cancel();
         } else {
             cancellableHandlerId = cancellable.connect(() => {
+                if (timeoutId) {
+                    GLib.Source.remove(timeoutId);
+                    timeoutId = 0;
+                }
                 requestCancellable.cancel();
             });
         }
     }
 
-    if (timeoutMs > 0) {
+    if (timeoutMs > 0 && !requestCancellable.is_cancelled()) {
         timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, timeoutMs, () => {
             timeoutId = 0;
             timedOut = true;

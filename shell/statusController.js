@@ -8,10 +8,12 @@ const RECONNECT_DELAYS_SECONDS = [1, 2, 5, 10, 30];
 
 export class StatusController {
     constructor({
+        beforeConnect = async () => {},
         client = new NetBirdClient(),
         onActionError,
         onStateChanged,
     }) {
+        this._beforeConnect = beforeConnect;
         this._client = client;
         this._onActionError = onActionError;
         this._onStateChanged = onStateChanged;
@@ -29,7 +31,7 @@ export class StatusController {
             sessionExpiresAt: 0,
             state: 'Unavailable',
         };
-        this._switching = false;
+        this._busy = false;
 
         this._emitChanged();
         this._subscribe();
@@ -38,6 +40,7 @@ export class StatusController {
 
     get state() {
         return {
+            busy: this._busy,
             profileName: this._profileName,
             profiles: this._profiles,
             snapshot: this._snapshot,
@@ -71,52 +74,60 @@ export class StatusController {
                 : profiles.activeProfile;
             this._emitChanged();
         } catch {
-            if (!this._client.cancelled)
-                this._setUnavailable();
+            // List requests do not determine the connection state; the status stream does.
         } finally {
             this._refreshing = false;
         }
     }
 
     async toggleConnection() {
-        if (this._client.cancelled)
+        if (this._client.cancelled || this._busy)
             return true;
 
+        this._setBusy(true);
         try {
-            if (this._snapshot.connected || this._snapshot.state === 'Connecting')
+            if (this._snapshot.connected || this._snapshot.state === 'Connecting') {
                 await this._client.disconnect();
-            else if (this._snapshot.state === 'Unavailable' || this._needsLogin())
+            } else if (this._snapshot.state === 'Unavailable' || this._needsLogin()) {
                 return false;
-            else
-                await this._client.connect(this._activeProfileId());
+            } else {
+                await this._beforeConnect();
+                if (!this._client.cancelled)
+                    await this._client.connect(this._activeProfileId());
+            }
             return true;
         } catch (error) {
             if (!this._client.cancelled)
                 this._onActionError('Connection Could Not Be Changed', error);
             return true;
+        } finally {
+            this._setBusy(false);
         }
     }
 
     async selectProfile(profileId) {
         const profile = this._profiles.find(item => item.id === profileId);
-        if (!profile || profile.isActive || this._switching ||
-            this._client.cancelled)
+        if (!profile || profile.isActive || this._busy ||
+            this._client.cancelled || this._snapshot.state === 'Unavailable')
             return;
 
-        this._switching = true;
+        this._setBusy(true);
         const reconnect = this._snapshot.connected || this._snapshot.state === 'Connecting';
         try {
             if (reconnect)
                 await this._client.disconnect();
             await this._client.switchProfile(profileId);
-            if (reconnect)
-                await this._client.connect(profileId);
+            if (reconnect) {
+                await this._beforeConnect();
+                if (!this._client.cancelled)
+                    await this._client.connect(profileId);
+            }
             await this.refreshLists();
         } catch (error) {
             if (!this._client.cancelled)
                 this._onActionError('Profile Could Not Be Switched', error);
         } finally {
-            this._switching = false;
+            this._setBusy(false);
         }
     }
 
@@ -168,6 +179,11 @@ export class StatusController {
             connected: false,
             state: 'Unavailable',
         };
+        this._emitChanged();
+    }
+
+    _setBusy(busy) {
+        this._busy = busy;
         this._emitChanged();
     }
 
